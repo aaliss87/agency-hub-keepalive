@@ -1,0 +1,65 @@
+name: Run Agency Agents
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: 'Which agent to run'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - prospector
+          - notifier
+      target_region:
+        description: 'Region for prospector (optional)'
+        required: false
+        type: string
+      target_niche:
+        description: 'Niche for prospector (optional)'
+        required: false
+        type: string
+
+jobs:
+  run-prospector:
+    if: github.event_name == 'schedule' || github.event.inputs.agent == 'both' || github.event.inputs.agent == 'prospector'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ./agents
+        run: npm install
+      - name: Run Prospector
+        working-directory: ./agents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TRIGGER_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'scheduled' }}
+          TRIGGERED_BY: ${{ github.actor }}
+          TARGET_REGION: ${{ github.event.inputs.target_region }}
+          TARGET_NICHE: ${{ github.event.inputs.target_niche }}
+        run: node prospector.js
+
+  run-notifier:
+    needs: run-prospector
+    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'both' || github.event.inputs.agent == 'notifier')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ./agents
+        run: npm install
+      - name: Run Notifier
+        working-directory: ./agents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node notifier.js
