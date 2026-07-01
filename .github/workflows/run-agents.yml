@@ -7,12 +7,9 @@ on:
       agent:
         description: 'Which agent to run'
         required: true
-        default: 'both'
+        default: 'all'
         type: choice
-        options:
-          - both
-          - prospector
-          - notifier
+        options: [all, prospector, mockup, outreach, build, notifier]
       target_region:
         description: 'Region for prospector (optional)'
         required: false
@@ -24,39 +21,89 @@ on:
 
 jobs:
   run-prospector:
-    if: github.event_name == 'schedule' || github.event.inputs.agent == 'both' || github.event.inputs.agent == 'prospector'
+    if: github.event_name == 'schedule' || github.event.inputs.agent == 'all' || github.event.inputs.agent == 'prospector'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install dependencies
+        with: { node-version: '20' }
+      - run: npm install
         working-directory: ./agents
-        run: npm install
       - name: Run Prospector
         working-directory: ./agents
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TRIGGER_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'scheduled' }}
-          TRIGGERED_BY: ${{ github.actor }}
           TARGET_REGION: ${{ github.event.inputs.target_region }}
           TARGET_NICHE: ${{ github.event.inputs.target_niche }}
         run: node prospector.js
 
-  run-notifier:
+  run-mockup:
     needs: run-prospector
-    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'both' || github.event.inputs.agent == 'notifier')
+    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'all' || github.event.inputs.agent == 'mockup')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install dependencies
+        with: { node-version: '20' }
+      - run: npm install
         working-directory: ./agents
-        run: npm install
+      - name: Run Mockup Agent
+        working-directory: ./agents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+        run: node mockup-agent.js
+
+  run-outreach:
+    needs: run-mockup
+    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'all' || github.event.inputs.agent == 'outreach')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+        working-directory: ./agents
+      - name: Run Outreach Agent
+        working-directory: ./agents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+        run: node outreach.js
+
+  run-build:
+    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'all' || github.event.inputs.agent == 'build')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+        working-directory: ./agents
+      - name: Run Build Agent
+        working-directory: ./agents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+        run: node build-agent.js
+
+  run-notifier:
+    needs: [run-outreach, run-build]
+    if: always() && (github.event_name == 'schedule' || github.event.inputs.agent == 'all' || github.event.inputs.agent == 'notifier')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+        working-directory: ./agents
       - name: Run Notifier
         working-directory: ./agents
         env:
